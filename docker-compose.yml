@@ -1,16 +1,15 @@
 services:
-
   person-postgres:
     image: postgres:17
     container_name: person-postgres
-    entrypoint:
+    environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: person
     volumes:
       - ./infrastructure/databases/person:/docker-entrypoint-initdb.d:ro
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres -p 5432" ]
       interval: 10s
@@ -20,7 +19,7 @@ services:
   keycloak-postgres:
     image: postgres:17
     container_name: keycloak-postgres
-    entrypoint:
+    environment:
       POSTGRES_USER: keycloak
       POSTGRES_PASSWORD: keycloak
       POSTGRES_DB: keycloak
@@ -36,8 +35,8 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: person-postgres-exporter
     depends_on:
-      - person-postgres:
-          condition: service_healthy
+      person-postgres:
+        condition: service_healthy
     environment:
       DATA_SOURCE_NAME: postgresql://postgres:postgres@person-postgres:5432/postgres?sslmode=disable
     ports:
@@ -47,8 +46,8 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: keycloak-postgres-exporter
     depends_on:
-      - person-postgres:
-          condition: service_healthy
+      person-postgres:
+        condition: service_healthy
     environment:
       DATA_SOURCE_NAME: postgresql://keycloak:keycloak@keycloak-postgres:5432/keycloak?sslmode=disable
     ports:
@@ -57,28 +56,27 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.2
     container_name: individuals-keycloak
-    command:
-      - start-dev
-      - import-realm
-      - --health-enabled=true
+    command: start-dev --import-realm --metrics-enabled=true
     ports:
       - "8080:8080"
       - "9000:9000"
     environment:
-      JAVA_OPTS: -Dkeycloak.migration.userExportStrategy=REALM_FILE
+      JAVA_OPTS: -Dkeycloak.migration.usersExportStrategy=REALM_FILE
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
+      KC_METRICS_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
     volumes:
       - ./infrastructure/keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json
     depends_on:
-      - keycloak-postgres:
-          condition: service_healthy
+      keycloak-postgres:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "curl -fsS http://localhost:9000/healthy/ready || exit1" ]
+      test: [ "CMD-SHELL", "curl -fsS http://localhost:9000/health/ready || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -140,9 +138,9 @@ services:
     container_name: alloy
     user: root
     ports:
-      - "9080:9080"
-      - "4317:4317"
-      - "4318:4318"
+      - "9080:9080" # HTTP interface
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP http
     volumes:
       - ./infrastructure/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -188,12 +186,8 @@ services:
 volumes:
   artifacts:
   tempo_data:
-  nexus_data:
+  nexus-data:
   loki_data:
   loki_chunks:
   loki_index:
   loki_rules:
-
-
-
-
